@@ -11,6 +11,7 @@ from structlog.contextvars import merge_contextvars
 from .pii import scrub_text
 
 LOG_PATH = Path(os.getenv("LOG_PATH", "data/logs.jsonl"))
+AUDIT_LOG_PATH = Path(os.getenv("AUDIT_LOG_PATH", "data/audit.jsonl"))
 
 
 class JsonlFileProcessor:
@@ -19,6 +20,13 @@ class JsonlFileProcessor:
         rendered = structlog.processors.JSONRenderer()(logger, method_name, event_dict)
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(rendered + "\n")
+        
+        # Route audit-specific events to separate audit log
+        if event_dict.get("service") == "control" or event_dict.get("audit") is True:
+            AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with AUDIT_LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(rendered + "\n")
+                
         return event_dict
 
 
@@ -43,7 +51,7 @@ def configure_logging() -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts"),
             # TODO: Register your PII scrubbing processor here
-            # scrub_event,
+            scrub_event,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             JsonlFileProcessor(),
